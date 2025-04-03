@@ -4,7 +4,7 @@ clear
 close all
 
 % 文件名
-filename = 'joint_data_20250403_161519_控制周期5关节速度180.txt';
+filename = 'joint_data_20250403_181143_jmk控制周期5关节速度180.txt';
 
 % 使用更灵活的方式读取数据
 opts = detectImportOptions(filename);
