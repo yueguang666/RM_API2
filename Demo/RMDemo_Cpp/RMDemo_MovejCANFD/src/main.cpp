@@ -270,7 +270,7 @@ void demo_movej_canfd(rm_robot_handle* handle) {
         memcpy(current_plan_point, points[i], arm_dof_angle * sizeof(float));
         current_point_index = i;
         
-        SLEEP_MS(2);
+        SLEEP_MS(3);
     }
 
     SLEEP_S(5);
