@@ -35,6 +35,9 @@ float current_plan_point[arm_dof_angle] = {0};
 int current_point_index = -1;
 bool is_recording = false;
 
+// 添加到全局变量部分
+unsigned long long last_canfd_call_timestamp = 0;
+
 // Data recording switch - set to 1 to enable recording, 0 to disable
 int data_recording_enabled = 1;
 
@@ -71,27 +74,26 @@ void start_data_recording() {
         return;
     }
     
-    // Write header
+    // 修改文件头部添加canfd时间戳列
     fprintf(data_output_file, "point_index,timestamp_us,");
-    
-    // Plan positions header
+
+    // 计划位置头部
     for (int i = 0; i < arm_dof_angle; i++) {
         fprintf(data_output_file, "plan_pos_%d,", i);
     }
-    
-    // Actual positions header
+
+    // 实际位置头部
     for (int i = 0; i < arm_dof_angle; i++) {
         fprintf(data_output_file, "actual_pos_%d,", i);
     }
-    
-    // Current header
+
+    // 电流头部
     for (int i = 0; i < arm_dof_angle; i++) {
-        if (i < arm_dof_angle - 1) {
-            fprintf(data_output_file, "current_%d,", i);
-        } else {
-            fprintf(data_output_file, "current_%d\n", i);
-        }
+        fprintf(data_output_file, "current_%d,", i);
     }
+
+    // 添加canfd调用时间戳列
+    fprintf(data_output_file, "canfd_call_timestamp_us\n");
     
     is_recording = true;
     printf("Data recording started: %s\n", filename);
@@ -107,52 +109,51 @@ void stop_data_recording() {
     }
 }
 
-// Function to save current data point with microsecond timestamp
+// 修改save_joint_data函数，添加rm_movej_canfd调用后的时间戳列
 void save_joint_data(int point_index, float* plan_positions, rm_realtime_arm_joint_state_t* data) {
     if (!is_recording || !data_output_file) {
         return;
     }
     
-    // Get current timestamp in microseconds
+    // 获取当前微秒级时间戳
     unsigned long long timestamp_us = 0;
     
     #ifdef _WIN32
-    // Windows implementation for microsecond precision
+    // Windows实现微秒精度
     LARGE_INTEGER frequency, count;
     QueryPerformanceFrequency(&frequency);
     QueryPerformanceCounter(&count);
-    // Convert to microseconds
+    // 转换为微秒
     timestamp_us = (count.QuadPart * 1000000) / frequency.QuadPart;
     #else
-    // Linux implementation with microsecond precision
+    // Linux实现微秒精度
     struct timeval tv;
     gettimeofday(&tv, NULL);
     timestamp_us = (unsigned long long)tv.tv_sec * 1000000 + tv.tv_usec;
     #endif
     
-    // Write point index and timestamp (now in microseconds)
+    // 写入点索引和时间戳（微秒）
     fprintf(data_output_file, "%d,%llu,", point_index, timestamp_us);
     
-    // Write planned positions
+    // 写入计划位置
     for (int i = 0; i < arm_dof_angle; i++) {
         fprintf(data_output_file, "%.6f,", plan_positions[i]);
     }
     
-    // Write actual positions
+    // 写入实际位置
     for (int i = 0; i < arm_dof_angle; i++) {
         fprintf(data_output_file, "%.6f,", data->joint_status.joint_position[i]);
     }
     
-    // Write current values
+    // 写入电流值
     for (int i = 0; i < arm_dof_angle; i++) {
-        if (i < arm_dof_angle - 1) {
-            fprintf(data_output_file, "%.6f,", data->joint_status.joint_current[i]);
-        } else {
-            fprintf(data_output_file, "%.6f\n", data->joint_status.joint_current[i]);
-        }
+        fprintf(data_output_file, "%.6f,", data->joint_status.joint_current[i]);
     }
     
-    // Flush to ensure data is written even if program crashes
+    // 写入canfd调用时间戳（如果有）
+    fprintf(data_output_file, "%llu\n", last_canfd_call_timestamp);
+    
+    // 确保数据即使在程序崩溃时也能写入
     fflush(data_output_file);
 }
 
@@ -266,11 +267,26 @@ void demo_movej_canfd(rm_robot_handle* handle) {
             printf("Error at point %d: %d\n", i, result);
         }
 
-        // Update current plan point and index for data recording
+        // 更新当前计划点和索引用于数据记录
         memcpy(current_plan_point, points[i], arm_dof_angle * sizeof(float));
         current_point_index = i;
         
-        SLEEP_MS(3);
+        // 获取canfd调用后的微秒级时间戳
+        #ifdef _WIN32
+        // Windows实现微秒精度
+        LARGE_INTEGER frequency, count;
+        QueryPerformanceFrequency(&frequency);
+        QueryPerformanceCounter(&count);
+        // 转换为微秒
+        last_canfd_call_timestamp = (count.QuadPart * 1000000) / frequency.QuadPart;
+        #else
+        // Linux实现微秒精度
+        struct timeval tv;
+        gettimeofday(&tv, NULL);
+        last_canfd_call_timestamp = (unsigned long long)tv.tv_sec * 1000000 + tv.tv_usec;
+        #endif
+        
+        SLEEP_MS(2);
     }
 
     SLEEP_S(5);
